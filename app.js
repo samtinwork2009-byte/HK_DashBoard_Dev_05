@@ -5,14 +5,6 @@
 
 "use strict";
 
-window._lastWeatherUpdate = null;
-window._lastWeatherTemp = null;
-window._lastWeatherAQHI = null;
-
-window.addEventListener("unhandledrejection", (event) => {
-  event.preventDefault();
-  console.error("[HK Dashboard] Unhandled asynchronous error:", event.reason);
-});
 /* ── Offline / Online Detection ──────────────────────────────────── */
 (function initOfflineDetection() {
   // Create the offline banner element
@@ -75,69 +67,41 @@ window.addEventListener("unhandledrejection", (event) => {
     // Auto-refresh all data when connection restored
     console.log("[HK Dashboard] Back online — refreshing data…");
     if (typeof loadAllData === "function") loadAllData();
-    if (typeof loadNewsSummary === "function") loadNewsSummary();
   });
 })();
 
 /* ── Bootstrap ───────────────────────────────────────────────── */
-document.addEventListener("DOMContentLoaded", function () {
-  requestAnimationFrame(() =>
-    safeRun("Bootstrap", async () => {
-      console.log("[HK Dashboard v4] Initialising…");
+document.addEventListener("DOMContentLoaded", async function () {
+  console.log("[HK Dashboard v4] Initialising…");
 
-      // 1. Show home page after the first layout pass
-      installModuleFallbacks();
-      enhanceLiquidIcons();
-      showPage("home");
-      initHomeWidgets();
-      initGlobalSearch();
-      initSummaryCards();
+  // 1. Show home page
+  showPage("home");
+  initHomeWidgets();
+  initSummaryCards();
 
-      // 2. Initial data load (parallel)
-      await loadAllData();
+  // 2. Initial data load (parallel)
+  await loadAllData();
 
-      // 3. Start auto-refresh loop
-      startAutoRefresh();
+  // 3. Start auto-refresh loop
+  startAutoRefresh();
 
-      // 4. Render bus preset slots
-      initBusPresets();
+  // 4. Render bus preset slots
+  initBusPresets();
 
-      console.log("[HK Dashboard v4] Ready.");
-    }),
-  );
+  console.log("[HK Dashboard v4] Ready.");
 });
-
-function enhanceLiquidIcons() {
-  document.querySelectorAll(".nav-tab svg, .bottom-nav-item svg").forEach((icon) => {
-    icon.classList.add("liquid-icon");
-    if (icon.getAttribute("stroke")) {
-      icon.setAttribute("stroke", "url(#liquidIconGradient)");
-    }
-  });
-  document.querySelectorAll(".card svg, .summary-icon svg, .widget-card-icon svg").forEach((icon) => {
-    icon.classList.add("liquid-card-icon");
-  });
-}
 
 /* ── Load all data ─────────────────────────────────────────────── */
 async function loadAllData() {
-  const tasks = [];
-  if (typeof Weather !== "undefined") {
-    tasks.push(safeRun("Weather", () => Weather.refresh()));
-  }
-  if (typeof Transport !== "undefined") {
-    tasks.push(safeRun("Transport", () => Transport.refresh()));
-  }
-  if (typeof Health !== "undefined") {
-    tasks.push(safeRun("Health", () => Health.refresh()));
-  }
-  if (typeof Environment !== "undefined") {
-    tasks.push(safeRun("Environment", () => Environment.refresh()));
-  }
-  if (typeof Finance !== "undefined") {
-    tasks.push(safeRun("Finance", () => Finance.refresh()));
-  }
-  await Promise.allSettled(tasks);
+  await Promise.allSettled([
+    safeRun("Weather", () => Weather.refresh()),
+    safeRun("Transport", () => Transport.refresh()),
+    safeRun("Health", () => Health.refresh()),
+    safeRun("Environment", () => Environment.refresh()),
+    safeRun("Finance", () =>
+      typeof Finance !== "undefined" ? Finance.refresh() : Promise.resolve(),
+    ),
+  ]);
 }
 
 /* ── Bus preset init ──────────────────────────────────────────── */
@@ -149,40 +113,28 @@ function initBusPresets() {
 
 /* ── Auto-refresh ────────────────────────────────────────────── */
 function startAutoRefresh() {
-  const shouldRefresh = () => {
-    return document.visibilityState === "visible" && navigator.onLine;
-  };
-
   // Refresh weather/health/environment every 60 seconds
   setInterval(async () => {
-    if (!shouldRefresh()) return;
     await Promise.allSettled([
-      typeof Weather !== "undefined" && safeRun("Weather", () => Weather.refresh()),
-      typeof Health !== "undefined" && safeRun("Health", () => Health.refresh()),
-      typeof Environment !== "undefined" && safeRun("Environment", () => Environment.refresh()),
-    ].filter(Boolean));
+      safeRun("Weather", () => Weather.refresh()),
+      safeRun("Health", () => Health.refresh()),
+      safeRun("Environment", () => Environment.refresh()),
+    ]);
   }, 60000);
 
   // Transport-specific refresh every 10 seconds
   setInterval(async () => {
-    if (!shouldRefresh()) return;
-    if (typeof Transport !== "undefined") {
-      await safeRun("Transport", () => Transport.refresh());
-    }
+    await safeRun("Transport", () => Transport.refresh());
   }, 10000);
 
   // Bus presets every 45 seconds
   setInterval(async () => {
-    if (!shouldRefresh()) return;
-    if (typeof Bus !== "undefined") {
-      await safeRun("Bus", () => Bus.refresh());
-    }
+    await safeRun("Bus", () => Bus.refresh());
   }, 45000);
 
   // Parking every 5 minutes
   setInterval(async () => {
-    if (!shouldRefresh() || window._currentPage !== "parking") return;
-    if (typeof Parking !== "undefined") {
+    if (window._currentPage === "parking") {
       await safeRun("Parking", () => Parking.refresh());
     }
   }, 300000);
@@ -250,77 +202,6 @@ function initHomeWidgets() {
   );
 }
 
-const TOOL_CATALOG = [
-  { page: "weather", title: "天氣", description: "即時天氣、預報及警告", keywords: "天氣 氣象 預報 警告" },
-  { page: "transport", title: "交通", description: "港鐵及交通服務狀況", keywords: "交通 港鐵 輕鐵" },
-  { page: "bus", title: "巴士", description: "巴士路線及到站時間", keywords: "巴士 九巴 城巴 到站" },
-  { page: "parking", title: "停車場", description: "搜尋附近停車場空位", keywords: "停車場 車位 空位" },
-  { page: "environment", title: "環境", description: "空氣質素及健康指數", keywords: "環境 空氣 AQHI" },
-  { page: "health", title: "醫療", description: "急症室等候時間", keywords: "醫療 急症室 醫院" },
-  { page: "tides", title: "潮汐", description: "潮汐及地震資料", keywords: "潮汐 海浪 地震" },
-  { page: "map", title: "地圖", description: "城市資料地圖圖層", keywords: "地圖 AED 泳灘" },
-  { page: "cctv", title: "道路快拍", description: "查看道路攝影機", keywords: "道路 CCTV 攝影機" },
-  { page: "waste", title: "回收", description: "回收及廢物資訊", keywords: "回收 垃圾 廢物" },
-];
-function renderSearchResults(query) {
-  const results = document.getElementById("global-search-results");
-  if (!results) return;
-  const normalized = query.trim().toLowerCase();
-  const matches = normalized
-    ? TOOL_CATALOG.filter((tool) => `${tool.title} ${tool.description} ${tool.keywords}`.toLowerCase().includes(normalized))
-    : TOOL_CATALOG;
-  results.replaceChildren();
-  if (!matches.length) {
-    results.textContent = "找不到相符工具。";
-    return;
-  }
-  matches.forEach((tool) => {
-    const row = document.createElement("div");
-    row.className = "global-search-result";
-    const open = document.createElement("button");
-    open.className = "global-search-result-open";
-    open.type = "button";
-    open.innerHTML = `<strong>${tool.title}</strong><small>${tool.description}</small>`;
-    open.addEventListener("click", () => {
-      window.showPage?.(tool.page);
-      document.getElementById("global-search")?.classList.add("hidden");
-    });
-    row.append(open);
-    results.appendChild(row);
-  });
-}
-
-function initGlobalSearch() {
-  const search = document.getElementById("global-search");
-  const input = document.getElementById("global-search-input");
-  const openButtons = [document.getElementById("global-search-toggle")].filter(Boolean);
-  const close = document.getElementById("global-search-close");
-
-  function openSearch() {
-    if (!search) return;
-    search.classList.remove("hidden");
-    renderSearchResults(input?.value || "");
-    input?.focus();
-  }
-  function closeSearch() {
-    search?.classList.add("hidden");
-  }
-
-  openButtons.forEach((button) => button.addEventListener("click", openSearch));
-  close?.addEventListener("click", closeSearch);
-  search?.addEventListener("click", (event) => {
-    if (event.target === search) closeSearch();
-  });
-  input?.addEventListener("input", () => renderSearchResults(input.value));
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "/" && document.activeElement?.tagName !== "INPUT") {
-      event.preventDefault();
-      openSearch();
-    }
-    if (event.key === "Escape") closeSearch();
-  });
-}
-
 function initSummaryCards() {
   updateSummaryTime();
   setInterval(updateSummaryTime, 1000);
@@ -359,24 +240,15 @@ function updateSummaryTime() {
 
 function getWeatherEmoji(desc) {
   const text = (desc || "").toLowerCase();
-  switch (true) {
-    case text.includes("雷"):
-      return "⛈️";
-    case text.includes("雪"):
-      return "❄️";
-    case text.includes("雨"):
-      return "🌧️";
-    case text.includes("晴"):
-      return "☀️";
-    case text.includes("雲"):
-      return "⛅";
-    case text.includes("霧"):
-      return "🌫️";
-    case text.includes("風"):
-      return "🌬️";
-    default:
-      return "🌤️";
-  }
+  if (text.includes("雷")) return "⛈️";
+  if (text.includes("雨")) return "🌧️";
+  if (text.includes("雪")) return "❄️";
+  if (text.includes("雲")) return "⛅";
+  if (text.includes("多雲")) return "⛅";
+  if (text.includes("晴")) return "☀️";
+  if (text.includes("霧") || text.includes("霧")) return "🌫️";
+  if (text.includes("風")) return "🌬️";
+  return "🌤️";
 }
 
 function updateSummaryWeather(
@@ -387,6 +259,7 @@ function updateSummaryWeather(
   humidity,
   uv,
   condition,
+  wind,
 ) {
   const tempEl = document.getElementById("summary-temp");
   const aqhiEl = document.getElementById("summary-aqhi");
@@ -394,7 +267,7 @@ function updateSummaryWeather(
   const updatedEl = document.getElementById("summary-updated");
   const humidityEl = document.getElementById("summary-humidity");
   const uvEl = document.getElementById("summary-uv");
-  const conditionEl = document.getElementById("summary-condition");
+  const windEl = document.getElementById("summary-wind");
   const visualEl = document.getElementById("summary-weather-visual");
   if (tempEl)
     tempEl.textContent =
@@ -404,8 +277,15 @@ function updateSummaryWeather(
   if (updatedEl) updatedEl.textContent = updatedAt || "-- 分鐘前";
   if (humidityEl) humidityEl.textContent = humidity || "--%";
   if (uvEl) uvEl.textContent = uv || "--";
-  if (conditionEl) conditionEl.textContent = condition || desc || "載入中...";
+  if (windEl) windEl.textContent = wind || "-- / --";
   if (visualEl) visualEl.textContent = getWeatherEmoji(condition || desc);
+  if (currentTemp !== undefined) {
+    saveHistoryRecord("weather", {
+      timestamp: new Date().toISOString(),
+      temperature: Number(currentTemp) || null,
+      aqhi: aqhi || null,
+    });
+  }
 }
 
 function renderTransportSummary(view) {
@@ -426,207 +306,75 @@ function renderTransportSummary(view) {
       return;
     }
   }
-  target.innerHTML =
-    '<div class="row-item"><span style="color:var(--text-faint)">目前無法顯示交通摘要。</span></div>';
+  target.innerHTML = `<div class="row-item"><span style="color:var(--text-faint)">${window.getDashboardFallbackText ? window.getDashboardFallbackText() : "此項目有待更新，敬請原諒"}</span></div>`;
 }
 
-const NEWS_CACHE_KEY = "hk_dashboard_news_cache";
-const GOVERNMENT_NEWS_API =
-  "https://api.data.gov.hk/v1/pressrelease/search?lang=tc&type=press";
-const GOVERNMENT_NEWS_RSS = [
-  "https://www.news.gov.hk/tc/common/html/topstories.rss.xml",
-  "https://www.news.gov.hk/tc/common/html/ticker.rss.xml",
-  "https://www.info.gov.hk/gia/rss/general_zh.xml",
-];
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 async function loadNewsSummary() {
   const container = document.getElementById("summary-news");
   if (!container) return;
-  try {
-    const items = await fetchGovernmentNews();
-    if (!items.length) {
-      throw new Error("no news");
-    }
-    saveNewsCache(items);
-    renderNewsItems(container, items);
-  } catch (e) {
-    console.warn("News fetch error:", e);
-    const cached = loadNewsCache();
-    if (cached.length) {
-      renderNewsItems(container, cached, true);
-      return;
-    }
-    container.innerHTML = "<div class='news-empty'>政府新聞暫時無法載入，請稍後重試。</div>";
-  }
-}
 
-function renderNewsItems(container, items, isCache = false) {
-  const escapeHtml = (value) =>
-    String(value || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  const safeLink = (value) => {
-    try {
-      const url = new URL(value || "#", window.location.href);
-      return ["http:", "https:"].includes(url.protocol) ? url.href : "#";
-    } catch (e) {
-      return "#";
-    }
-  };
-  const inner = document.createElement("div");
-  inner.className = "marquee-inner";
-  inner.innerHTML = items
-    .slice(0, 5)
-    .map(
-      (item) => `
-      <a href="${escapeHtml(safeLink(item.link))}" target="_blank" rel="noopener noreferrer" class="marquee-item">
-        ${escapeHtml(item.title)}<time>${new Date(item.pubDate).toLocaleTimeString("zh-HK", { hour12: false, hour: "2-digit", minute: "2-digit" })}</time>
-      </a>
-    `,
-    )
-    .join("");
-  container.innerHTML = "";
-  container.appendChild(inner);
-  if (isCache) {
-    const note = document.createElement("div");
-    note.style.cssText = "font-size:0.75rem;color:var(--text-faint);margin-top:8px";
-    note.textContent = "使用離線緩存新聞。";
-    container.appendChild(note);
-  }
-}
+  const rssUrls = [
+    "https://www.hk01.com/feeds/rss",
+    "https://news.rthk.hk/rthk/en/rss.htm",
+  ];
 
-function saveNewsCache(items) {
-  try {
-    localStorage.setItem(
-      NEWS_CACHE_KEY,
-      JSON.stringify({ timestamp: Date.now(), items: items.slice(0, 5) }),
-    );
-  } catch (e) {
-    console.warn("Unable to save news cache", e);
-  }
-}
-
-function loadNewsCache() {
-  try {
-    const stored = localStorage.getItem(NEWS_CACHE_KEY);
-    if (!stored) return [];
-    return JSON.parse(stored).items || [];
-  } catch (e) {
-    console.warn("Unable to read news cache", e);
-    return [];
-  }
-}
-
-async function fetchWithTimeout(url, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function fetchGovernmentNews() {
-  try {
-    const response = await fetchWithTimeout(GOVERNMENT_NEWS_API);
-    const payload = await response.json();
-    const items = parseGovernmentNewsResponse(payload);
-    if (items.length) return items;
-  } catch (error) {
-    console.warn("Government news API failed:", error);
-  }
-  for (const rssUrl of GOVERNMENT_NEWS_RSS) {
-    try {
-      const response = await fetchWithTimeout(rssUrl);
-      const xmlText = await response.text();
-      const items = parseRssTextResponse(xmlText);
-      if (items.length) return items;
-    } catch (error) {
-      console.warn(`Government news RSS failed: ${rssUrl}`, error);
-    }
-  }
-  return [];
-}
-
-function parseGovernmentNewsResponse(data) {
-  const candidates = [data, data?.data, data?.items, data?.results, data?.pressReleases];
-  const rows = candidates.find((value) => Array.isArray(value)) || [];
-  return rows
-    .map((item) => ({
-      title: item.title || item.subject || item.name || item.title_tc || "(無標題)",
-      link: item.url || item.link || item.href || item.uri || "#",
-      pubDate: item.publishTime || item.publish_time || item.pubDate || item.date || item.datetime || new Date().toISOString(),
-    }))
-    .filter((item) => item.title && item.link);
-}
-
-function notifyUnavailableModule(label) {
-  const message = `${label}功能暫時無法使用，相關模組未能載入。`;
-  if (typeof window.showNotification === "function") {
-    window.showNotification(message, { duration: 5000 });
-  } else {
-    console.warn(`[HK Dashboard] ${message}`);
-  }
-}
-
-function installModuleFallbacks() {
-  const fallbackMethods = {
-    BusSearch: { search: () => notifyUnavailableModule("巴士搜尋") },
-    Bus_GMB: { loadRoutes: () => notifyUnavailableModule("專線小巴") },
-    MapView: { switchLayer: () => notifyUnavailableModule("地圖") },
-    Parking: {
-      applyFilter: () => notifyUnavailableModule("停車場"),
-      refresh: () => notifyUnavailableModule("停車場"),
-    },
-    Tides: { changeStation: () => notifyUnavailableModule("潮汐") },
-    Beach: { filterSearch: () => notifyUnavailableModule("泳灘") },
-    Ferry: { onSearch: () => notifyUnavailableModule("嶼巴") },
-  };
-  Object.entries(fallbackMethods).forEach(([moduleName, methods]) => {
-    const module = window[moduleName] || {};
-    Object.entries(methods).forEach(([methodName, fallback]) => {
-      if (typeof module[methodName] !== "function") module[methodName] = fallback;
-    });
-    window[moduleName] = module;
-  });
-  if (typeof window.fetchMTRCustom !== "function") {
-    window.fetchMTRCustom = () => notifyUnavailableModule("港鐵");
-  }
-  if (typeof window.fetchLRTCustom !== "function") {
-    window.fetchLRTCustom = () => notifyUnavailableModule("輕鐵");
-  }
-  if (typeof window.loadCCTVInput !== "function") {
-    window.loadCCTVInput = () => notifyUnavailableModule("道路快拍");
-  }
-}
-
-function parseRssTextResponse(xmlText) {
-  if (!xmlText) return [];
-  try {
+  async function parseRssFeed(url) {
+    const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    const res = await fetch(proxy);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
     const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlText, "text/xml");
-    if (doc.querySelector("parsererror")) return [];
-    return Array.from(doc.querySelectorAll("item")).slice(0, 5).map((item) => {
-      const title = item.querySelector("title")?.textContent || "(無標題)";
-      const link = item.querySelector("link")?.textContent || "#";
-      const pubDate =
-        item.querySelector("pubDate")?.textContent ||
-        item.querySelector("dc\\:date")?.textContent ||
-        new Date().toISOString();
-      return { title, link, pubDate };
-    });
+    const xml = parser.parseFromString(text, "application/xml");
+    const items = Array.from(xml.querySelectorAll("item"))
+      .slice(0, 8)
+      .map((node) => ({
+        title: node.querySelector("title")?.textContent || "最新消息",
+        link: node.querySelector("link")?.textContent || "#",
+        pubDate:
+          node.querySelector("pubDate")?.textContent ||
+          new Date().toISOString(),
+      }));
+    return items;
+  }
+
+  try {
+    let items = [];
+    for (const url of rssUrls) {
+      try {
+        items = await parseRssFeed(url);
+        if (items.length) break;
+      } catch (err) {
+        console.warn("News feed failed:", url, err);
+      }
+    }
+    if (!items.length) throw new Error("no news");
+
+    const inner = document.createElement("div");
+    inner.className = "marquee-inner";
+    inner.innerHTML = items
+      .map((item) => {
+        const title = escapeHtml(item.title);
+        const pubTime = new Date(item.pubDate).toLocaleTimeString("zh-HK", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return `<a href="${escapeHtml(item.link)}" target="_blank" rel="noopener" class="marquee-item">${title}<time>${pubTime}</time></a>`;
+      })
+      .join("");
+    container.innerHTML = "";
+    container.appendChild(inner);
   } catch (e) {
-    return [];
+    console.error("News fetch error:", e);
+    container.innerHTML = `<div class="marquee-item">${window.getDashboardFallbackText ? window.getDashboardFallbackText() : "此項目有待更新，敬請原諒"}</div>`;
   }
 }
 
@@ -704,14 +452,12 @@ async function queryHistory(type, hours) {
 }
 
 setInterval(async () => {
-  const hasUpdate =
-    typeof window._lastWeatherUpdate === "string" &&
-    !Number.isNaN(Date.parse(window._lastWeatherUpdate));
-  const hasValue =
-    (window._lastWeatherTemp !== null && window._lastWeatherTemp !== "--") ||
-    (window._lastWeatherAQHI !== null && window._lastWeatherAQHI !== "--");
-  if (document.visibilityState === "visible" && hasUpdate && hasValue) {
+  if (
+    document.visibilityState === "visible" &&
+    typeof window._lastWeatherUpdate !== "undefined"
+  ) {
     await saveHistoryRecord("weather", {
+      timestamp: new Date().toISOString(),
       temperature: window._lastWeatherTemp ?? null,
       aqhi: window._lastWeatherAQHI ?? null,
     });
@@ -721,87 +467,80 @@ setInterval(async () => {
 /* ── Safe run wrapper ────────────────────────────────────────── */
 async function safeRun(label, fn) {
   try {
-    if (typeof fn !== "function") return;
     await fn();
   } catch (e) {
     console.error(`[${label}] refresh error:`, e);
   }
 }
 
-function refreshModule(label, moduleName) {
-  return safeRun(label, () => {
-    const module = window[moduleName];
-    if (!module || typeof module.refresh !== "function") return;
-    return module.refresh();
-  });
-}
-
 /* ── Page change hook ────────────────────────────────────────── */
-const _origShowPage = typeof window.showPage === "function" ? window.showPage : function () {};
+const _origShowPage = window.showPage;
 window.showPage = function (name) {
+  // Redirect any legacy 'bus' page requests to the unified 'transport' page
+  if (name === "bus") name = "transport";
   _origShowPage(name);
   // Trigger immediate refresh for the newly visible page
   switch (name) {
     case "weather":
-      refreshModule("Weather", "Weather");
+      safeRun("Weather", () => Weather.refresh());
       loadWeatherForecastText();
       break;
     case "transport":
-      refreshModule("Transport", "Transport");
+      safeRun("Transport", () => Transport.refresh());
       break;
     case "health":
-      refreshModule("Health", "Health");
+      safeRun("Health", () => Health.refresh());
       break;
     case "environment":
-      refreshModule("Environment", "Environment");
+      safeRun("Environment", () => Environment.refresh());
       break;
     case "bus":
       // Only reload if presets are empty
       break;
     case "tides":
-      refreshModule("Tides", "Tides");
+      safeRun("Tides", () => Tides.refresh());
       break;
     case "parking":
       // Only load on first visit
       if (!window._parkingLoaded) {
         window._parkingLoaded = true;
-        refreshModule("Parking", "Parking");
+        safeRun("Parking", () => Parking.refresh());
       }
       break;
     case "ferry":
       if (!window._ferryLoaded) {
         window._ferryLoaded = true;
-        refreshModule("Ferry", "Ferry");
+        safeRun("Ferry", () => Ferry.refresh());
       }
       break;
     case "beach":
       if (!window._beachLoaded) {
         window._beachLoaded = true;
-        refreshModule("Beach", "Beach");
+        safeRun("Beach", () => Beach.refresh());
       }
       break;
     case "map":
-      refreshModule("Map", "MapView");
+      safeRun("Map", () => MapView.refresh());
       break;
     case "holidays":
       // Load on first visit
       if (!window._holidaysLoaded) {
         window._holidaysLoaded = true;
-        refreshModule("Holidays", "Holidays");
+        safeRun("Holidays", () => Holidays.refresh());
       }
       break;
     case "climate":
       // Load on first visit
       if (!window._climateLoaded) {
         window._climateLoaded = true;
-        refreshModule("Climate", "Climate");
+        safeRun("Climate", () => Climate.refresh());
       }
       break;
     // CCTV: don't auto-load, let user choose cameras
     case "waste":
       if (!window._wasteLoaded) {
         window._wasteLoaded = true;
-        refreshModule("Waste", "Waste");
+        safeRun("Waste", () => Waste.refresh());
       }
       break;
   }
@@ -860,7 +599,7 @@ async function loadWeatherForecastText() {
 
 /* ── Refresh indicator in footer ─────────────────────────────── */
 (function initRefreshIndicator() {
-  const footer = document.querySelector(".dashboard-footer-inner");
+  const footer = document.querySelector(".footer-inner");
   if (!footer) return;
   const div = document.createElement("div");
   div.id = "footer-refresh";
